@@ -1,0 +1,13 @@
+hmdp:
+  benchmark:
+    enabled: true
+  kafka:
+    enabled: true
+  seckill:
+    mode: async
+
+# 压测时关闭逐条 SQL、Kafka 客户端 INFO 日志，避免控制台 I/O 污染吞吐结果。
+logging:
+  level:
+    com.hmdp: warn
+    org.apache.kafka: warn

@@ -10,7 +10,7 @@
         1. 删除超出时间窗口的数据 redis.call('ZREMRANGEBYSCORE', key, 0, now - window)
         2. 获取当前时间窗口内的已请求数量 redis.call('ZCARD', key)
         3. 判断当前时间窗口内的已请求数量 是否 小于 limit 限制次数
-            a. 若小于，则把本次请求加入key中，以当前时间戳为分数score，以当前时间戳+随机数为成员member，更新过期时间，本次请求可放行，后续可执行业务逻辑
+            a. 若小于，则把本次请求加入key中，以当前时间戳为分数score，以应用生成的UUID为member，更新过期时间并放行
             b. 若大于或等于，则返回本次请求应该限流
 ]]
 
@@ -18,9 +18,10 @@ local key = KEYS[1]
 local window = tonumber(ARGV[1]) -- 时间窗口(单位为秒)
 local limit = tonumber(ARGV[2]) -- 时间窗口内限制的次数
 local now = tonumber(ARGV[3])  -- 当前时间(单位为毫秒)
+local requestId = ARGV[4]
 
 -- 校验传进来的参数是否为空,若为空直接返回错误
-if not window or not limit or not now then
+if not window or not limit or not now or not requestId then
   return redis.error_reply("Invalid input parameters")
 end
 
@@ -37,10 +38,8 @@ local current = redis.call('ZCARD', key)
 
 -- 若"当前时间窗口内的请求数量" 小于 "时间窗口内限制的次数"
 if current < limit then
-  -- 添加当前请求（使用毫秒时间戳+随机数作为member,时间戳作为score）
-  math.randomseed(now)
-  local random = math.random(1000000)
-  redis.call('ZADD', key, now, now .. '-' .. random)
+  -- requestId 由应用生成，避免同一毫秒并发请求的 member 发生覆盖。
+  redis.call('ZADD', key, now, requestId)
   -- 更新过期时间
   redis.call('EXPIRE', key, window / 1000)
   return current + 1

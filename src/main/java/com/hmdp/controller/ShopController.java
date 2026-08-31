@@ -74,7 +74,7 @@ public class ShopController {
             window = 5,
             limit = 5,
             message = "查询次数过多，请稍后再试",
-            type = RateLimiter.LimitType.METHOD
+            type = RateLimiter.LimitType.IP
     )
     @GetMapping("/of/type")
     public Result queryShopByType(

@@ -5,7 +5,7 @@ spring:
     name: hmdp
   datasource:
     driver-class-name: com.mysql.jdbc.Driver
-    url: jdbc:mysql://127.0.0.1:3306/hmdp?useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true&useSSL=false
+    url: jdbc:mysql://127.0.0.1:3306/hmdp?useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
     username: root
     password: 123456
   redis:
@@ -19,8 +19,29 @@ spring:
         time-between-eviction-runs: 10s
   jackson:
     default-property-inclusion: non_null # JSON处理时忽略非空字段
+  kafka:
+    bootstrap-servers: localhost:9092
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      acks: all
+      retries: 3
+      properties:
+        enable.idempotence: true
+    consumer:
+      group-id: hmdp-order-group
+      enable-auto-commit: false
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+    listener:
+      ack-mode: record
+      missing-topics-fatal: false
+
 mybatis-plus:
   type-aliases-package: com.hmdp.entity # 别名扫描包
+
+
 logging:
   level:
     com.hmdp: debug
@@ -29,9 +50,21 @@ logging:
 
 # 【秒杀优惠券信息多级缓存改造】本地缓存的配置项(刷新时间、过期时间)、Redis缓存的过期时间
 hmdp:
+  kafka:
+    enabled: false
+    send-timeout: 3s
+    retry-interval: 1s
+    retry-attempts: 3
+  seckill:
+    mode: sync
+    order-timeout: 15m
+    close-scan-delay: 60000
+    close-scan-batch-size: 100
+  benchmark:
+    enabled: false
   cache:
     voucher-list:
-      mode: mysql
+      mode: caffeine
       refresh-after-write: 5s
       expire-after-write: 10m
       redis-ttl: 30m

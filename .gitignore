@@ -1,5 +1,8 @@
 HELP.md
 target/
+.m2/
+.tools/
+benchmark-results/
 !.mvn/wrapper/maven-wrapper.jar
 !**/src/main/**/target/
 !**/src/test/**/target/

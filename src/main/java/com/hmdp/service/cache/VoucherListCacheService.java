@@ -1,6 +1,5 @@
 package com.hmdp.service.cache;
 
-import cn.hutool.core.collection.CollectionUtil;
 import cn.hutool.core.util.StrUtil;
 import cn.hutool.json.JSONUtil;
 import com.github.benmanes.caffeine.cache.CacheLoader;
@@ -93,11 +92,12 @@ public class VoucherListCacheService {
         // 2) Redis中不存在，读 MySQL
         List<Voucher> vouchers = loadFromDb(shopId);
 
-        if(CollectionUtil.isNotEmpty(vouchers)) {
-            // 3) MySQL中数据不为空才写回 Redis, 避免写入空数据
-            long ttlMillis = cacheProperties.getRedisTtl().toMillis();
-            stringRedisTemplate.opsForValue().set(key, JSONUtil.toJsonStr(vouchers), ttlMillis, TimeUnit.MILLISECONDS);
-        }
+        // 空列表也缓存较短时间，避免不存在shopId反复穿透到MySQL。
+        long ttlMillis = vouchers.isEmpty()
+                ? TimeUnit.MINUTES.toMillis(2)
+                : cacheProperties.getRedisTtl().toMillis();
+        stringRedisTemplate.opsForValue().set(
+                key, JSONUtil.toJsonStr(vouchers), ttlMillis, TimeUnit.MILLISECONDS);
 
         return vouchers;
     }
@@ -105,5 +105,10 @@ public class VoucherListCacheService {
     private List<Voucher> loadFromDb(Long shopId) {
         List<Voucher> vouchers = voucherMapper.queryVoucherOfShop(shopId);
         return vouchers == null ? Collections.emptyList() : vouchers;
+    }
+
+    public void invalidate(Long shopId) {
+        voucherListCache.invalidate(shopId);
+        stringRedisTemplate.delete(CACHE_VOUCHER_LIST_KEY + shopId);
     }
 }

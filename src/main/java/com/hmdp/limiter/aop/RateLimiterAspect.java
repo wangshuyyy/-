@@ -2,6 +2,7 @@ package com.hmdp.limiter.aop;
 
 import com.hmdp.limiter.annotation.RateLimiter;
 import com.hmdp.limiter.exception.RateLimitException;
+import com.hmdp.utils.UserHolder;
 import lombok.extern.slf4j.Slf4j;
 import org.aspectj.lang.JoinPoint;
 import org.aspectj.lang.annotation.Aspect;
@@ -18,6 +19,7 @@ import javax.annotation.Resource;
 import javax.servlet.http.HttpServletRequest;
 import java.lang.reflect.Method;
 import java.util.Collections;
+import java.util.UUID;
 
 /**
      【滑动窗口限流】-2
@@ -45,8 +47,6 @@ public class RateLimiterAspect {
     // 前置拦截 注解了rateLimiter的方法
     @Before("@annotation(rateLimiter)")
     public void doBefore(JoinPoint point, RateLimiter rateLimiter) {
-        log.info("进入切面逻辑!!!");
-
         // 获取注解上的参数
         String key = rateLimiter.key();
         long window = rateLimiter.window();
@@ -58,7 +58,10 @@ public class RateLimiterAspect {
         Long result = executeSlidingWindowScript(fullKey, window, limit);
 
         // 如果返回0表示被限流
-        if (result != null && result == 0) {
+        if (result == null) {
+            throw new RateLimitException("限流服务暂不可用");
+        }
+        if (result.longValue() == 0L) {
             throw new RateLimitException(rateLimiter.message());
         }
     }
@@ -72,12 +75,14 @@ public class RateLimiterAspect {
      * @return 当前窗口内请求数量计数（如果被限流返回0）
      */
     public Long executeSlidingWindowScript(String key, Long window, Long limit) {
+        if (window == null || window <= 0 || limit == null || limit <= 0) {
+            throw new IllegalArgumentException("限流窗口和阈值必须大于0");
+        }
         long now = System.currentTimeMillis();
-        log.info("key:{}, window:{}, limit:{}", key, window, limit);
         return stringRedisTemplate.execute(
                 SLIDING_WINDOW_SCRIPT,
                 Collections.singletonList(key),
-                window.toString(), limit.toString(), Long.toString(now)
+                window.toString(), limit.toString(), Long.toString(now), UUID.randomUUID().toString()
         );
     }
 
@@ -118,7 +123,11 @@ public class RateLimiterAspect {
      * 获取客户端IP
      */
     private String getClientIp() {
-        HttpServletRequest request = ((ServletRequestAttributes) RequestContextHolder.getRequestAttributes()).getRequest();
+        ServletRequestAttributes attributes = (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
+        if (attributes == null) {
+            return "unknown";
+        }
+        HttpServletRequest request = attributes.getRequest();
         String ip = request.getHeader("X-Forwarded-For");
         if (ip == null || ip.length() == 0 || "unknown".equalsIgnoreCase(ip)) {
             ip = request.getHeader("Proxy-Client-IP");
@@ -129,15 +138,14 @@ public class RateLimiterAspect {
         if (ip == null || ip.length() == 0 || "unknown".equalsIgnoreCase(ip)) {
             ip = request.getRemoteAddr();
         }
-        return ip;
+        // X-Forwarded-For 可能包含代理链，首个地址才是原始客户端地址。
+        return ip.contains(",") ? ip.substring(0, ip.indexOf(',')).trim() : ip.trim();
     }
 
     /**
      * 获取当前用户ID（需要根据实际系统实现）
      */
     private String getCurrentUserId() {
-        // 这里需要根据你的认证系统实现
-        // 例如从SecurityContext等等上下文中获取认证用户
-        return "anonymous"; // 默认返回匿名用户
+        return UserHolder.getUser() == null ? "anonymous" : String.valueOf(UserHolder.getUser().getId());
     }
 }

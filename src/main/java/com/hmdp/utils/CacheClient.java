@@ -75,45 +75,49 @@ public class CacheClient {
     public <R, ID> R queryWithLogicalExpire(
             String keyPrefix, ID id, Class<R> type, Function<ID, R> dbFallback, Long time, TimeUnit unit) {
         String key = keyPrefix + id;
-        // 1.从redis查询商铺缓存
         String json = stringRedisTemplate.opsForValue().get(key);
-        // 2.判断是否存在
+        if (json == null) {
+            // 冷启动允许同步回源一次；之后热点Key采用逻辑过期异步重建。
+            R loaded = dbFallback.apply(id);
+            if (loaded == null) {
+                stringRedisTemplate.opsForValue().set(key, "", CACHE_NULL_TTL, TimeUnit.MINUTES);
+                return null;
+            }
+            setWithLogicalExpire(key, loaded, time, unit);
+            return loaded;
+        }
         if (StrUtil.isBlank(json)) {
-            // 3.存在，直接返回
             return null;
         }
-        // 4.命中，需要先把json反序列化为对象
         RedisData redisData = JSONUtil.toBean(json, RedisData.class);
+        if (redisData.getExpireTime() == null || redisData.getData() == null) {
+            // 兼容此前普通JSON缓存，删除后按新格式重建。
+            stringRedisTemplate.delete(key);
+            return queryWithLogicalExpire(keyPrefix, id, type, dbFallback, time, unit);
+        }
         R r = JSONUtil.toBean((JSONObject) redisData.getData(), type);
         LocalDateTime expireTime = redisData.getExpireTime();
-        // 5.判断是否过期
         if(expireTime.isAfter(LocalDateTime.now())) {
-            // 5.1.未过期，直接返回店铺信息
             return r;
         }
-        // 5.2.已过期，需要缓存重建
-        // 6.缓存重建
-        // 6.1.获取互斥锁
         String lockKey = LOCK_SHOP_KEY + id;
         boolean isLock = tryLock(lockKey);
-        // 6.2.判断是否获取锁成功
         if (isLock){
-            // 6.3.成功，开启独立线程，实现缓存重建
             CACHE_REBUILD_EXECUTOR.submit(() -> {
                 try {
-                    // 查询数据库
                     R newR = dbFallback.apply(id);
-                    // 重建缓存
-                    this.setWithLogicalExpire(key, newR, time, unit);
+                    if (newR == null) {
+                        stringRedisTemplate.opsForValue().set(key, "", CACHE_NULL_TTL, TimeUnit.MINUTES);
+                    } else {
+                        this.setWithLogicalExpire(key, newR, time, unit);
+                    }
                 } catch (Exception e) {
-                    throw new RuntimeException(e);
+                    log.error("逻辑过期缓存重建失败，key={}", key, e);
                 }finally {
-                    // 释放锁
                     unlock(lockKey);
                 }
             });
         }
-        // 6.4.返回过期的商铺信息
         return r;
     }
 

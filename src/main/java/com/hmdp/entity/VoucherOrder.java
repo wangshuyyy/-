@@ -53,6 +53,11 @@ public class VoucherOrder implements Serializable {
     private Integer status;
 
     /**
+     * 库存回补状态：0未回补，1数据库回补中，2 Redis/MySQL均已回补。
+     */
+    private Integer stockReturnState;
+
+    /**
      * 下单时间
      */
     private LocalDateTime createTime;

@@ -7,6 +7,8 @@ import com.hmdp.dto.Result;
 import com.hmdp.entity.Shop;
 import com.hmdp.mapper.ShopMapper;
 import com.hmdp.service.IShopService;
+import com.hmdp.service.event.CacheConsistencyService;
+import com.hmdp.mq.CacheInvalidationEvent;
 import com.hmdp.utils.CacheClient;
 import com.hmdp.utils.SystemConstants;
 import org.springframework.data.geo.Distance;
@@ -41,12 +43,15 @@ public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IS
 
     @Resource
     private CacheClient cacheClient;
+    @Resource
+    private CacheConsistencyService cacheConsistencyService;
 
     @Override
     public Result queryById(Long id) {
-        // 解决缓存穿透
+        // 热点景区详情采用逻辑过期保证可用性；冷启动和不存在ID由CacheClient回源/缓存空值。
         Shop shop = cacheClient
-                .queryWithPassThrough(CACHE_SHOP_KEY, id, Shop.class, this::getById, CACHE_SHOP_TTL, TimeUnit.MINUTES);
+                .queryWithLogicalExpire(CACHE_SHOP_KEY, id, Shop.class, this::getById,
+                        CACHE_SHOP_TTL, TimeUnit.MINUTES);
 
         // 互斥锁解决缓存击穿
         // Shop shop = cacheClient
@@ -72,8 +77,9 @@ public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IS
         }
         // 1.更新数据库
         updateById(shop);
-        // 2.删除缓存
-        stringRedisTemplate.delete(CACHE_SHOP_KEY + id);
+        // 事务提交后删除缓存；失败通过Kafka重试，TTL作为最终兜底。
+        cacheConsistencyService.invalidateAfterCommit(
+                new CacheInvalidationEvent(CacheInvalidationEvent.SHOP, id));
         return Result.ok();
     }
 

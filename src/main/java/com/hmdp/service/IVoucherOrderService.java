@@ -3,6 +3,8 @@ package com.hmdp.service;
 import com.hmdp.dto.Result;
 import com.hmdp.entity.VoucherOrder;
 import com.baomidou.mybatisplus.extension.service.IService;
+import com.hmdp.mq.OrderCompensationEvent;
+import com.hmdp.mq.SeckillOrderEvent;
 
 /**
  * <p>
@@ -15,4 +17,18 @@ import com.baomidou.mybatisplus.extension.service.IService;
 public interface IVoucherOrderService extends IService<VoucherOrder> {
 
     Result seckillVoucher(Long voucherId);
+
+    void createVoucherOrder(SeckillOrderEvent event);
+
+    void rollbackReservation(SeckillOrderEvent event);
+
+    void compensateCancelledOrder(OrderCompensationEvent event);
+
+    Result queryOrder(Long orderId);
+
+    Result mockPay(Long orderId);
+
+    Result cancelOrder(Long orderId);
+
+    void closeExpiredOrders();
 }

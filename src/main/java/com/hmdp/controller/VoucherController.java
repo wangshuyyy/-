@@ -44,6 +44,11 @@ public class VoucherController {
         return Result.ok(voucher.getId());
     }
 
+    @PutMapping
+    public Result updateVoucher(@RequestBody Voucher voucher) {
+        return voucherService.updateVoucher(voucher);
+    }
+
 
     /**
      * 查询店铺的【秒杀】优惠券列表
